@@ -1,0 +1,59 @@
+#!/bin/bash
+
+umask 077
+
+KEYNAME="pdns"
+KEYSIZE=4096
+
+exit_error() {
+  echo "ERROR: ${1}" >&2
+  exit 1
+}
+
+check_old_key() {
+    if [ -f "$KEYNAME.private.pem" -o -f "$KEYNAME.public.pem" ]
+    then
+        exit_error "An old key is existing here, remove it first!"
+    fi
+}
+
+check_dependencies() {
+    openssl version > /dev/null 2>&1 || exit_error "This script requires an openssl binary."
+}
+
+print_help() {
+cat << EOF
+Usage: $0 [options]
+
+Options are:
+    -h         Show this help message
+    -n NAME    Set basename of key to NAME (default pdns)
+    -k SIZE    Use SIZE as rsa keysize (default 4096)
+EOF
+
+exit 0
+}
+
+#main
+while getopts "n:s:h" opt
+do
+    case $opt in
+        n)
+            KEYNAME=$OPTARG
+            ;;
+        s)
+            KEYSIZE=$OPTARG
+            ;;
+        h)
+            print_help
+            ;;
+    esac
+done
+
+check_dependencies
+check_old_key
+
+echo "Generating rsa key pair with $KEYSIZE bits"
+openssl genrsa -out "$KEYNAME.private.pem" "$KEYSIZE" >/dev/null 2>&1 || exit_error "Key generation failed."
+echo "Extracting public key"
+openssl rsa -in "$KEYNAME.private.pem" -out "$KEYNAME.public.pem" -outform PEM -pubout >/dev/null 2>&1 || exit_error "Pubkey extraction failed."

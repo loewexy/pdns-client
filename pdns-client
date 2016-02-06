@@ -1,0 +1,117 @@
+#!/bin/bash
+
+SERVER=""
+DOMAIN=""
+ID=""
+CONTENT=""
+KEY="pdns.private.pem"
+
+exit_error() {
+  echo "ERROR: ${1}" >&2
+  exit 1
+}
+
+check_dependencies() {
+    openssl version > /dev/null 2>&1 || exit_error "This script requires an openssl binary."
+    curl -V > /dev/null 2>&1 || exit_error "This script requires curl."
+    jq --version > /dev/null 2>&1 || exit_error "This script requires jq."
+}
+
+print_help() {
+cat << EOF
+Usage: $0 [options]
+
+Options are:
+    -h         Show this help message
+    -s SERVER  Server where PDNS manager runs
+    -d DOMAIN  Domain name to change
+    -i ID      Id of permission
+    -c CONTENT Content to set
+    -k KEY     Private key to sign with (default pdns.private.pem)
+EOF
+
+exit 0
+}
+
+validate_arguments() {
+    if [[ ! "$SERVER" =~ ^https?://.+/$ ]]
+    then
+        exit_error "The server must be in form of https://dns.example.com/ with trailing slash"
+    fi
+    if [[ ! "$DOMAIN" =~ ^.+$ ]]
+    then
+        exit_error "The domain must be set"
+    fi
+    if [[ ! "$ID" =~ ^[0-9]+$ ]]
+    then
+        exit_error "The id must be a positive integer"
+    fi
+    if [[ ! "$CONTENT" =~ ^.+$ ]]
+    then
+        exit_error "The content cannot be empty"
+    fi
+    if [[ ! -f "$KEY" ]]
+    then
+        exit_error "$KEY is not a file"  
+    fi
+    
+    openssl rsa -in "$KEY" -check -noout > /dev/null 2>&1 || exit_error "$KEY ist not a valid rsa private key"
+}
+
+#main
+while getopts "s:d:i:c:k:h" opt
+do
+    case $opt in
+        s)
+            SERVER="$OPTARG"
+            ;;
+        d)
+            DOMAIN="$OPTARG"
+            ;;
+        i)
+            ID="$OPTARG"
+            ;;
+        c)
+            CONTENT="$OPTARG"
+            ;;
+        k)
+            KEY="$OPTARG"
+            ;;
+        h)
+            print_help
+            ;;
+    esac
+done
+
+check_dependencies
+validate_arguments
+
+#Get nonce for signing
+read NONCE < <(echo "{}" |\
+jq -c .domain="\"$DOMAIN\"" |\
+jq -c .id="\"$ID\"" |\
+jq -c .content="\"$CONTENT\"" |\
+curl -s --data-binary @- "${SERVER}api/remote.php?getNonce" |\
+jq -r .nonce)
+
+if [ -z $NONCE ]
+then
+    exit_error "Error when trying to get nonce"
+fi
+
+#Sign request
+SIGNATURE=$(echo -n "$DOMAIN$ID$CONTENT$NONCE" | openssl dgst -sha512 -sign $KEY | base64)
+
+#Send signed request to server
+readarray result < <(echo "{}" |\
+jq -c .domain="\"$DOMAIN\"" |\
+jq -c .id="\"$ID\"" |\
+jq -c .content="\"$CONTENT\"" |\
+jq -c .signature="\"$SIGNATURE\"" |\
+curl -s --data-binary @- "${SERVER}api/remote.php?editRecord")
+
+if [ $(echo "${result[@]}" | jq -r .status) != "success" ]
+then
+    echo "${result[@]}" | jq -r .error
+    exit 1
+fi
