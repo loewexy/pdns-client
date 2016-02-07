@@ -1,10 +1,12 @@
 #!/bin/bash
 
+SD="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
 SERVER=""
 DOMAIN=""
 ID=""
 CONTENT=""
-KEY="pdns.private.pem"
+KEY=""
 
 exit_error() {
   echo "ERROR: ${1}" >&2
@@ -50,12 +52,23 @@ validate_arguments() {
     then
         exit_error "The content cannot be empty"
     fi
-    if [[ ! -f "$KEY" ]]
+}
+
+resolve_keyfile() {
+    if [ -n "$KEY" ]
     then
-        exit_error "$KEY is not a file"  
+        openssl rsa -in "$KEY" -check -noout > /dev/null 2>&1 || exit_error "$KEY ist not a valid rsa private key"
+    else
+        if openssl rsa -in "pdns.private.pem" -check -noout >/dev/null 2>&1
+        then
+            KEY="pdns.private.pem"
+        elif openssl rsa -in "$SD/pdns.private.pem" -check -noout >/dev/null 2>&1
+        then
+            KEY="$SD/pdns.private.pem"
+        else
+            exit_error "No valid key found. Make shure it is in pdns.private.pem or supply it with -k."
+        fi
     fi
-    
-    openssl rsa -in "$KEY" -check -noout > /dev/null 2>&1 || exit_error "$KEY ist not a valid rsa private key"
 }
 
 #main
@@ -85,6 +98,7 @@ done
 
 check_dependencies
 validate_arguments
+resolve_keyfile
 
 #Get nonce for signing
 read NONCE < <(echo "{}" |\
