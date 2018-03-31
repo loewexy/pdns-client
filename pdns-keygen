@@ -42,7 +42,7 @@ Usage: $0 [options]
 Options are:
     -h         Show this help message
     -n NAME    Set basename of key to NAME (default pdns)
-    -k SIZE    Use SIZE as rsa keysize (default 4096)
+    -s SIZE    Use SIZE as rsa keysize (default 4096)
 EOF
 
 exit 0
