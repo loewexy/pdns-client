@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-#Copyright 2016 Lukas Metzger <developer@lukas-metzger.com>.
+#Copyright 2016-2018 Lukas Metzger <developer@lukas-metzger.com>.
 #
 #Licensed under the Apache License, Version 2.0 (the "License");
 #you may not use this file except in compliance with the License.
@@ -40,8 +40,7 @@ Usage: $0 [options]
 Options are:
     -h         Show this help message
     -s SERVER  Server where PDNS manager runs
-    -d DOMAIN  Domain name to change
-    -i ID      Id of permission
+    -i ID      Id of record to change
     -c CONTENT Content to set
     -k KEY     Private key to sign with (default pdns.private.pem)
 EOF
@@ -53,10 +52,6 @@ validate_arguments() {
     if [[ ! "$SERVER" =~ ^https?://.+/$ ]]
     then
         exit_error "The server must be in form of https://dns.example.com/ with trailing slash"
-    fi
-    if [[ ! "$DOMAIN" =~ ^.+$ ]]
-    then
-        exit_error "The domain must be set"
     fi
     if [[ ! "$ID" =~ ^[0-9]+$ ]]
     then
@@ -86,14 +81,11 @@ resolve_keyfile() {
 }
 
 #main
-while getopts "s:d:i:c:k:h" opt
+while getopts "s:i:c:k:h" opt
 do
     case $opt in
         s)
             SERVER="$OPTARG"
-            ;;
-        d)
-            DOMAIN="$OPTARG"
             ;;
         i)
             ID="$OPTARG"
@@ -114,31 +106,26 @@ check_dependencies
 validate_arguments
 resolve_keyfile
 
-#Get nonce for signing
-read NONCE < <(echo "{}" |\
-jq -c .domain="\"$DOMAIN\"" |\
-jq -c .id="\"$ID\"" |\
-jq -c .content="\"$CONTENT\"" |\
-curl -s --data-binary @- "${SERVER}api/remote.php?getNonce" |\
-jq -r .nonce)
+#Get timestamp for signing
+TIME=$(curl -s ${SERVER}api/v1/remote/servertime | jq -r .time)
 
-if [ -z $NONCE ]
+if [ -z $TIME ]
 then
-    exit_error "Error when trying to get nonce"
+    exit_error "Error when trying to get server time"
 fi
 
 #Sign request
-SIGNATURE=$(echo -n "$DOMAIN$ID$CONTENT$NONCE" | openssl dgst -sha512 -sign $KEY | base64)
+SIGNATURE=$(echo -n "$ID$CONTENT$TIME" | openssl dgst -sha512 -sign $KEY | base64)
 
 #Send signed request to server
 readarray result < <(echo "{}" |\
-jq -c .domain="\"$DOMAIN\"" |\
-jq -c .id="\"$ID\"" |\
+jq -c .record="\"$ID\"" |\
 jq -c .content="\"$CONTENT\"" |\
+jq -c .time="$TIME" |\
 jq -c .signature="\"$SIGNATURE\"" |\
-curl -s --data-binary @- "${SERVER}api/remote.php?editRecord")
+curl -s --data-binary @- -H "Content-Type: application/json" "${SERVER}api/v1/remote/updatekey")
 
-if [ $(echo "${result[@]}" | jq -r .status) != "success" ]
+if [ ! -z "${result[@]}" ]
 then
     echo "${result[@]}" | jq -r .error
     exit 1
