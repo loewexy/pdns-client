@@ -1,10 +1,10 @@
 # PDNS Manager Client
 
-[PDNS Manager](https://pdnsmanager.lmitsystems.de) is a simple yet powerful free administration tool for the
+[PDNS Manager](https://pdnsmanager.org) is a simple yet powerful free administration tool for the
 Powerdns authoritative nameserver. It features an API for changing records.
 
 This is the repository of a client for the post API implemented as a shell script. The API
-is described at the [PDNS Manager website](https://pdnsmanager.lmitsystems.de/documentation/api). 
+is described at the [PDNS Manager website](https://pdnsmanager.org/documentation/api). 
 There are also instructions on how to use this client.
 
 ## Dependencies
